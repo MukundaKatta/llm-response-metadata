@@ -21,7 +21,7 @@ Example::
             "cache_read_input_tokens": 128,
         },
     })
-    print(meta.total_tokens)  # 1408  (input + output only)
+    print(meta.total_tokens)  # 1280  (input + output only)
     print(meta.cache_savings_tokens)  # 128
 
     # From an OpenAI chat.completions.create() response (as dict)

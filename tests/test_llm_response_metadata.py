@@ -169,6 +169,20 @@ def test_from_anthropic_missing_usage():
     assert meta.usage.total_tokens == 0
 
 
+def test_from_anthropic_stop_sequence_is_complete():
+    resp = {**_ANTHROPIC_RESPONSE, "stop_reason": "stop_sequence"}
+    meta = ResponseMetadata.from_anthropic(resp)
+    assert meta.is_complete
+    assert not meta.was_truncated
+
+
+def test_from_anthropic_tool_use_not_complete_or_truncated():
+    resp = {**_ANTHROPIC_RESPONSE, "stop_reason": "tool_use"}
+    meta = ResponseMetadata.from_anthropic(resp)
+    assert not meta.is_complete
+    assert not meta.was_truncated
+
+
 # ---------------------------------------------------------------------------
 # ResponseMetadata — from_openai
 # ---------------------------------------------------------------------------
@@ -225,6 +239,25 @@ def test_from_openai_no_choices():
     assert meta.stop_reason == ""
 
 
+def test_from_openai_total_tokens_without_total_field():
+    # total_tokens is derived from input + output, not the API total field
+    resp = {
+        "id": "chatcmpl-2",
+        "model": "gpt-5.4",
+        "choices": [{"finish_reason": "stop"}],
+        "usage": {"prompt_tokens": 800, "completion_tokens": 200},
+    }
+    meta = ResponseMetadata.from_openai(resp)
+    assert meta.total_tokens == 1000
+
+
+def test_from_openai_tool_calls_not_complete_or_truncated():
+    resp = {**_OPENAI_RESPONSE, "choices": [{"finish_reason": "tool_calls"}]}
+    meta = ResponseMetadata.from_openai(resp)
+    assert not meta.is_complete
+    assert not meta.was_truncated
+
+
 def test_from_openai_latency():
     meta = ResponseMetadata.from_openai(_OPENAI_RESPONSE, latency_ms=123.0)
     assert meta.latency_ms == pytest.approx(123.0)
@@ -278,6 +311,23 @@ def test_from_gemini_no_candidates():
     assert meta.stop_reason == ""
 
 
+def test_from_gemini_is_complete():
+    meta = ResponseMetadata.from_gemini(_GEMINI_RESPONSE)
+    assert meta.is_complete
+
+
+def test_from_gemini_max_tokens_truncated():
+    resp = {**_GEMINI_RESPONSE, "candidates": [{"finishReason": "MAX_TOKENS"}]}
+    meta = ResponseMetadata.from_gemini(resp)
+    assert meta.was_truncated
+    assert not meta.is_complete
+
+
+def test_from_gemini_total_tokens():
+    meta = ResponseMetadata.from_gemini(_GEMINI_RESPONSE)
+    assert meta.total_tokens == 600
+
+
 # ---------------------------------------------------------------------------
 # ResponseMetadata — serialisation round-trip
 # ---------------------------------------------------------------------------
@@ -299,6 +349,18 @@ def test_to_dict_excludes_raw_key_by_default():
     d = meta.to_dict()
     # raw is preserved on the object but not serialised by to_dict
     assert "raw" not in d
+
+
+def test_to_dict_includes_latency_when_set():
+    meta = ResponseMetadata.from_anthropic(_ANTHROPIC_RESPONSE, latency_ms=42.0)
+    d = meta.to_dict()
+    assert d["latency_ms"] == pytest.approx(42.0)
+
+
+def test_to_dict_omits_latency_when_none():
+    meta = ResponseMetadata.from_anthropic(_ANTHROPIC_RESPONSE)
+    d = meta.to_dict()
+    assert "latency_ms" not in d
 
 
 def test_from_dict_unknown_provider():
